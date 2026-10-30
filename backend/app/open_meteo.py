@@ -8,6 +8,10 @@ from typing import Any
 import httpx
 from fastapi import HTTPException
 
+import logging
+
+logger = logging.getLogger("uvicorn.error")
+
 from .config import Settings
 from .grid import FIELD_CHUNK, field_matrices, field_points
 
@@ -51,8 +55,13 @@ async def _get_json(url: str, params: dict[str, Any], timeout: float) -> Any:
             response.raise_for_status()
             data = response.json()
     except httpx.TimeoutException:
+        logger.error("Timeout consultando %s", url)
         raise HTTPException(504, "Open-Meteo tardó demasiado en responder")
-    except (httpx.HTTPError, ValueError):
+    except httpx.HTTPStatusError as exc:
+        logger.error("Open-Meteo respondió %s: %s", exc.response.status_code, exc.response.text[:300])
+        raise HTTPException(502, f"Open-Meteo respondió {exc.response.status_code}")
+    except (httpx.HTTPError, ValueError) as exc:
+        logger.error("Error consultando %s: %r", url, exc)
         raise HTTPException(502, "No se pudo consultar Open-Meteo")
     if isinstance(data, dict) and data.get("error"):
         raise HTTPException(502, f"Open-Meteo: {data.get('reason', 'error desconocido')}")
